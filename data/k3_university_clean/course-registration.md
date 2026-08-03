@@ -1,7 +1,7 @@
 ---
 doc_id: k3-course-registration
 title: Đăng ký học phần
-audience: student            # student | faculty | staff | all
+audience: student # student | faculty | staff | all
 department: academic-affairs
 language: vi
 source_url: https://giaovu.ptit.edu.vn/ke-hoach-dao-tao/dang-ky-hoc-phan/

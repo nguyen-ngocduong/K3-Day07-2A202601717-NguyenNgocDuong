@@ -1,0 +1,36 @@
+[
+  {
+    "id": "k3-course-registration::chunk_0",
+    "content": "> Khối metadata phía trên là **template mẫu** cho K3 (bắt buộc: `audience` + `source_url` + `retrieved_at` + `document_version`, cùng ít nhất một trường hữu ích khác như `department`). Thay bằng nguồn công khai thật của nhóm trước khi dùng làm benchmark.\n\n# Đăng ký học phần (dữ liệu khởi động)\n\nSinh viên đăng ký học phần trong cổng học vụ theo lịch của từng học kỳ. Một học phần có thể yêu cầu học phần tiên quyết; sinh viên cần kiểm tra điều kiện trước khi xác nhận đăng ký.\n\nKhi gặp lỗi trùng lịc",
+    "metadata": {
+      "doc_id": "k3-course-registration",
+      "title": "Đăng ký học phần",
+      "audience": "student",
+      "department": "academic-affairs",
+      "language": "vi",
+      "source_url": "https://giaovu.ptit.edu.vn/ke-hoach-dao-tao/dang-ky-hoc-phan/",
+      "retrieved_at": "2026-08-02",
+      "document_version": "2026.1",
+      "source": "data/k3_university_clean/course-registration.md",
+      "chunk_index": 0,
+      "total_chunks": 2
+    }
+  },
+  {
+    "id": "k3-course-registration::chunk_1",
+    "content": "trước khi xác nhận đăng ký.\n\nKhi gặp lỗi trùng lịch, sinh viên điều chỉnh lớp học phần trước thời hạn điều chỉnh được công bố. Mọi yêu cầu ngoại lệ phải được gửi qua kênh hỗ trợ học vụ chính thức.",
+    "metadata": {
+      "doc_id": "k3-course-registration",
+      "title": "Đăng ký học phần",
+      "audience": "student",
+      "department": "academic-affairs",
+      "language": "vi",
+      "source_url": "https://giaovu.ptit.edu.vn/ke-hoach-dao-tao/dang-ky-hoc-phan/",
+      "retrieved_at": "2026-08-02",
+      "document_version": "2026.1",
+      "source": "data/k3_university_clean/course-registration.md",
+      "chunk_index": 1,
+      "total_chunks": 2
+    }
+  }
+]
