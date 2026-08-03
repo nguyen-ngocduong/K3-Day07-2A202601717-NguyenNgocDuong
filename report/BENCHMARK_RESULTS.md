@@ -1,7 +1,7 @@
 # Báo Cáo Đánh Giá Hiệu Năng Chunking & Phân Tích Lỗi (Benchmark & Failure Analysis)
 
 > **Embedding Model:** `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
-> **Thời Gian Tạo:** 2026-08-03 12:02:03
+> **Thời Gian Tạo:** 2026-08-03 12:30:49
 
 ---
 
@@ -9,11 +9,11 @@
 
 | Chiến Lược (Strategy) | Kích Thước / Tham Số | Tổng Chunks | Avg Chunks/Doc | Độ Dài TB (chars) | Thời Gian Indexing | Score TB (/2.0) | Chunk Precision |
 |---|---|---|---|---|---|---|---|
-| **FixedSizeChunker** | `chunk_size=500, overlap=50` | 54 | 4.91 | 471.7 | 2.3785s | **0.80** | **40%** |
-| **SentenceChunker** | `max_sentences_per_chunk=3` | 37 | 3.36 | 627.8 | 1.4869s | **0.80** | **20%** |
-| **RecursiveChunker** | `chunk_size=500, separators=['\n\n', '\n', '. ', ' ']` | 60 | 5.45 | 387.1 | 3.1112s | **0.60** | **20%** |
-| **HeadingChunker** | `chunk_size=500, heading_split=True` | 60 | 5.45 | 457.4 | 3.5008s | **0.80** | **20%** |
-| **SemanticChunker** | `similarity_threshold=0.45, max_chunk_size=500` | 274 | 24.91 | 83.1 | 10.5630s | **0.40** | **20%** |
+| **FixedSizeChunker** | `chunk_size=500, overlap=50` | 54 | 4.91 | 471.7 | 2.4223s | **0.80** | **40%** |
+| **SentenceChunker** | `max_sentences_per_chunk=3` | 37 | 3.36 | 627.8 | 1.4364s | **0.80** | **20%** |
+| **RecursiveChunker** | `chunk_size=500, separators=['\n\n', '\n', '. ', ' ']` | 60 | 5.45 | 387.1 | 2.0173s | **0.60** | **20%** |
+| **HeadingChunker** | `chunk_size=500, heading_split=True` | 60 | 5.45 | 457.4 | 1.7160s | **0.80** | **20%** |
+| **SemanticChunker** | `similarity_threshold=0.45, max_chunk_size=500` | 274 | 24.91 | 83.1 | 7.4581s | **0.40** | **20%** |
 
 ---
 

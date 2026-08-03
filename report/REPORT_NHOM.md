@@ -6,6 +6,7 @@
 |----------------|------|
 | Nguyễn Ngọc Dương | 2A202601717 |
 | Lê Văn Long | 2A202601711 |
+
 **Ngày:** 03/08/2026
 
 > **Nộp 1 bản / nhóm.** Phần cá nhân (hướng tiếp cận, kết quả riêng, dự đoán…) mỗi thành viên nộp riêng trong `REPORT_CANHAN.md`. Chi tiết thang điểm: `docs/SCORING.md`.
