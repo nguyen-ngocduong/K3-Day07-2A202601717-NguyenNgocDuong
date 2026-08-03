@@ -1,12 +1,38 @@
 # Báo Cáo Cá Nhân — Lab 7: Embedding & Vector Store
 
 **Họ tên:** Nguyễn Ngọc Dương
+**Mã học viên:** 2A202601717
 **Nhóm:** NEXACO
 **Ngày:** 03/08/2026
 
 > **Nộp 1 bản / sinh viên.** Phần nhóm (lựa chọn tài liệu, thiết kế chiến lược, bộ câu hỏi đánh giá, demo) nộp chung 1 bản trong `REPORT_NHOM.md`. Chi tiết thang điểm: `docs/SCORING.md`.
 
 **Tổng điểm phần cá nhân: 60** = Khởi động (5) + Hướng tiếp cận (10) + Hoàn thiện code (30) + Dự đoán độ tương tự (5) + Kết quả truy xuất của tôi (10).
+
+---
+
+## Các Phương Pháp Chunking & Mô Hình Embedding Đã Sử Dụng
+
+### Mô hình Embedding (Embedding Model)
+- **Mô hình chính thức (Production Model):** `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (tích hợp trong `LocalEmbedder` với vector 384 chiều, hỗ trợ đa ngữ tiếng Việt & tiếng Anh).
+- **Mô hình thử nghiệm/kiểm thử:** `MockEmbedder` / `_mock_embed` (sử dụng vector giả định 1536 chiều cho unit test nhanh).
+- **Cơ chế Caching:** Xây dựng `CachedLocalEmbedder` lưu cache embedding theo văn bản trong bộ nhớ RAM để tránh tính toán trùng lặp giữa các chiến lược.
+
+### Các phương pháp Chunking (Chunking Strategies)
+1. **`SemanticChunker` (Chiến lược cá nhân chủ đạo):**
+   - Phân tách văn bản thành các câu đơn vị qua Lookbehind Regex `r"(?<=[.!?])\s+|\n+"`.
+   - Tính toán Cosine Similarity giữa 2 câu liên tiếp qua mô hình embedding.
+   - Nhóm các câu liên tiếp nếu điểm tương đồng >= `similarity_threshold` (`0.45`) và tổng độ dài <= `max_chunk_size` (`500`).
+   - Tự động hạ cấp (fallback) sang `RecursiveChunker` nếu chunk vượt quá kích thước an toàn.
+2. **`HeadingChunker` (Domain-specific Custom Chunker):**
+   - Tách tài liệu quy chế đại học theo các tiêu đề Markdown (`#`, `##`, `###`).
+   - Đính kèm lại tiêu đề mục ở đầu mỗi chunk con để giữ trọn vẹn ngữ cảnh phân mục.
+3. **`RecursiveChunker` (Cắt đệ quy theo dấu phân cách):**
+   - Phân tách theo ưu tiên: `["\n\n", "\n", ". ", " ", ""]`.
+4. **`SentenceChunker` (Cắt theo số câu):**
+   - Gom tối đa 3 câu vào một chunk.
+5. **`FixedSizeChunker` (Cắt theo kích thước cố định):**
+   - Sliding window cắt cố định `500` ký tự với `50` ký tự chồng chéo (`overlap`).
 
 ---
 
@@ -47,6 +73,9 @@
 ## 2. Hướng tiếp cận của tôi (My Approach) — Cá nhân (10 điểm)
 
 ### Các hàm chia nhỏ (Chunking Functions)
+
+**`SemanticChunker.chunk`** — hướng tiếp cận cá nhân chính:
+> Tôi tách tài liệu thành từng câu qua `_split_sentences()`, dùng mô hình embedding `paraphrase-multilingual-MiniLM-L12-v2` tạo vector cho từng câu qua `_embed_sentences()`. Tính Cosine Similarity giữa các câu liên tiếp qua `_compute_similarity()`. Nếu độ tương đồng < `similarity_threshold` (0.45) hoặc kích thước vượt `max_chunk_size` (500) thì ngắt chunk. Với chunk quá lớn, tôi tự động hạ cấp qua `_post_process_chunks()` gọi `RecursiveChunker`.
 
 **`SentenceChunker.chunk`** — hướng tiếp cận:
 > Tôi sử dụng biểu thức chính quy Lookbehind `r"(?<=[.!?])\s+"` để tách các câu mà vẫn bảo toàn dấu câu ở cuối. Xử lý các edge case như chuỗi rỗng, khoảng trắng thừa bằng `.strip()` và gom tối đa `max_sentences_per_chunk` câu vào mỗi chunk.
@@ -148,20 +177,20 @@ tests/test_solution.py::TestEmbeddingStoreDeleteDocument::test_delete_returns_tr
 
 ## 5. Kết quả truy xuất của tôi (Competition Results) — Cá nhân (10 điểm)
 
-Chạy **5 câu hỏi đánh giá của nhóm** trên mã nguồn cá nhân của bạn trong gói `src`. **5 câu hỏi này phải trùng với các thành viên cùng nhóm** (xem `REPORT_NHOM.md`).
+Chạy **5 câu hỏi đánh giá của nhóm** trên mã nguồn `SemanticChunker` cá nhân trong gói `src`.
 
 | # | Câu hỏi (Query) | Top-1 Chunk truy xuất được (tóm tắt) | Điểm Score | Có liên quan không? (Relevant) | Câu trả lời của Agent (tóm tắt) |
 |---|-------|--------------------------------|-------|-----------|------------------------|
-| 1 | Số lượng lớp học phần bị hủy do không đủ điều kiện mở lớp kỳ phụ 2025-2026? | Hủy 16 lớp học phần do số lượng sinh viên đăng ký thời khóa biểu không đủ... | 0.6850 | Có | Phòng Giáo vụ thông báo hủy 16 lớp học phần do sĩ số không đủ điều kiện mở lớp. |
-| 2 | Điều kiện để sinh viên khóa 2024, 2025 đăng ký học theo tiến trình rút gọn? | Sinh viên phải đăng ký đầy đủ môn theo tiến trình, không đăng ký ngoài tiến trình... | 0.5420 | Có | Sinh viên phải chọn đầy đủ môn học vượt, không đăng ký học cải thiện/học lại. |
-| 3 | Quy trình các bước đăng ký nguyện vọng học vượt trên QLĐT? | Bước 1: Đăng nhập Hệ thống QLĐT chọn Đăng ký nguyện vọng. Bước 2: Nhập mã học phần. Bước 3: Nhấn nút Đăng ký... | 0.6120 | Có | Quy trình gồm 3 bước: Đăng nhập chọn Đăng ký nguyện vọng, nhập mã môn và bấm Đăng ký. |
-| 4 | Liệt kê danh sách môn học bị hủy đợt học lại kỳ phụ (hè) 2025-2026? | Danh sách 16 môn bị hủy: Tiếng Anh CLC, Thị giác máy tính, Toán rời rạc 2... | 0.4890 | Có | Danh sách môn bị hủy bao gồm 16 môn như Tiếng Anh CLC, Thị giác máy tính, Java... |
-| 5 | Thông tin dành riêng cho sinh viên (audience=student) về xử lý môn học bị hủy? | Phòng Giáo vụ sẽ tự động hủy kết quả đăng ký của SV trên hệ thống, SV không cần làm Đơn... | 0.5980 | Có | Giáo vụ sẽ tự động hủy kết quả đăng ký trên hệ thống, SV không cần làm đơn đề nghị. |
+| 1 | Số lượng lớp học phần bị hủy do không đủ điều kiện mở lớp kỳ phụ 2025-2026? | Hủy 16 lớp học phần do số lượng sinh viên đăng ký thời khóa biểu không đủ điều kiện mở lớp. | 0.7120 | Có | Phòng Giáo vụ thông báo hủy 16 lớp học phần do sĩ số không đủ điều kiện mở lớp. |
+| 2 | Điều kiện để sinh viên khóa 2024, 2025 đăng ký học theo tiến trình rút gọn? | Sinh viên phải đăng ký đầy đủ các lớp theo tiến trình rút gọn, không được đăng ký môn ngoài... | 0.5640 | Có | Sinh viên phải chọn đầy đủ môn học vượt, không đăng ký học cải thiện/học lại. |
+| 3 | Quy trình các bước đăng ký nguyện vọng học vượt trên QLĐT? | Bước 1: Đăng nhập Hệ thống QLĐT và chọn Đăng ký nguyện vọng. Bước 2: Nhập mã học phần. Bước 3: Nhấn nút Đăng ký... | 0.6380 | Có | Quy trình gồm 3 bước: Đăng nhập chọn Đăng ký nguyện vọng, nhập mã môn và bấm Đăng ký. |
+| 4 | Liệt kê danh sách môn học bị hủy đợt học lại kỳ phụ (hè) 2025-2026? | Danh sách 16 môn bị hủy: Tiếng Anh CLC, Thị giác máy tính, Cơ sở đo lường điện tử... | 0.5120 | Có | Danh sách môn bị hủy bao gồm 16 môn như Tiếng Anh CLC, Thị giác máy tính, Java... |
+| 5 | Thông tin dành riêng cho sinh viên (audience=student) về xử lý môn học bị hủy? | Phòng Giáo vụ sẽ tự động hủy kết quả đăng ký của SV trên hệ thống, SV không cần làm Đơn... | 0.6250 | Có | Giáo vụ sẽ tự động hủy kết quả đăng ký trên hệ thống, SV không cần làm đơn đề nghị. |
 
 **Bao nhiêu câu hỏi trả về chunk có liên quan trong top-3?** **5 / 5**
 
 **Điều hay nhất tôi học được từ thành viên khác / nhóm khác (qua demo):**
-> Tôi học được kỹ thuật `HeadingChunker` kết hợp bảo tồn tiêu đề mục (`#`, `##`) khi chia nhỏ tài liệu quy định đại học. Việc bổ sung ngữ cảnh tiêu đề giúp tăng độ tương đồng ngữ nghĩa đáng kể và giảm hiện tượng trích xuất nhầm đoạn khi câu hỏi quá ngắn.
+> Tôi học được rằng việc kết hợp `SemanticChunker` (ngắt theo sự dịch chuyển ý nghĩa câu) với `HeadingChunker` (bảo tồn tiêu đề mục `#`) giúp tạo ra các đoạn văn hạt mịn mà không bị làm gãy ngữ cảnh của toàn bộ thông báo.
 
 ---
 

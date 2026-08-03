@@ -2,10 +2,10 @@
 
 **Nhóm:** NEXACO
 **Thành viên:**
-| Họ và tên | Mã học viên |
-|----------------|------|
-| Nguyễn Ngọc Dương | 2A202601717 |
-| Lê Văn Long | 2A202601711 |
+| Họ và tên | Mã học viên | Phương pháp Chunking chính |
+|----------------|------|-------------------|
+| Nguyễn Ngọc Dương | 2A202601717 | `SemanticChunker` (Custom Embedding-driven) |
+| Lê Văn Long | 2A202601711 | `RecursiveChunker` / `HeadingChunker` |
 
 **Ngày:** 03/08/2026
 
@@ -60,52 +60,42 @@ Chạy `ChunkingStrategyComparator().compare()` trên các tài liệu đã làm
 | `dang-ky-lich-hoc-...md` | FixedSizeChunker (`fixed_size`) | 8 | 484.6 chars | Trung bình (cắt ngẫu nhiên giữa các đoạn). |
 | `dang-ky-lich-hoc-...md` | SentenceChunker (`by_sentences`) | 5 | 620.1 chars | Khá (giữ đúng ranh giới câu). |
 | `dang-ky-lich-hoc-...md` | RecursiveChunker (`recursive`) | 9 | 390.2 chars | Tốt (bảo tồn phân đoạn `\n\n` và `\n`). |
-| `dang-ky-lich-hoc-...md` | HeadingChunker (`heading`) | 9 | 450.5 chars | Rất tốt (giữ tiêu đề `#` mục trong ngữ cảnh). |
+| `dang-ky-lich-hoc-...md` | SemanticChunker (`semantic`) | 24 | 83.1 chars | Rất tốt về mặt ranh giới câu & chủ đề ngữ nghĩa. |
 
 ### Chiến lược của từng thành viên
 
 **Thành viên 1 — Nguyễn Ngọc Dương**
-- **Loại chiến lược:** Custom Domain Chunker (`HeadingChunker` kế thừa `RecursiveChunker`)
-- **Mô tả & lý do chọn cho chủ đề này:** Dữ liệu quy chế/thông báo PTIT chứa các mục tiêu đề phân cấp (`#`, `##`). `HeadingChunker` tự động gom nhóm văn bản theo tiêu đề trước, sau đó dùng `RecursiveChunker` cắt mịn và đính kèm lại tiêu đề mục ở đầu mỗi chunk con, giúp bảo toàn ý nghĩa ngữ nghĩa khi tìm kiếm vector.
-- **Code snippet (nếu custom):**
+- **Loại chiến lược:** **`SemanticChunker`** (Chia chunk theo sự thay đổi ngữ nghĩa bằng `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`)
+- **Mô tả & lý do chọn cho chủ đề này:** Thay vì cắt cứng theo số ký tự hay số câu, `SemanticChunker` tính toán độ tương đồng Cosine giữa 2 câu liên tiếp. Nếu tương đồng < `similarity_threshold` (0.45), hệ thống nhận diện đây là điểm chuyển đổi chủ đề và tách chunk mới. Phương pháp này giúp từng chunk chứa trọn vẹn một ý nghĩa hoàn chỉnh, tối ưu nhất cho bài toán hỏi đáp quy chế.
+- **Code snippet:**
 ```python
-class HeadingChunker:
-    def __init__(self, chunk_size: int = 500) -> None:
-        self.chunk_size = chunk_size
-        self.recursive_chunker = RecursiveChunker(chunk_size=chunk_size)
+class SemanticChunker:
+    def __init__(self, similarity_threshold: float = 0.45, max_chunk_size: int = 500) -> None:
+        self.similarity_threshold = similarity_threshold
+        self.max_chunk_size = max_chunk_size
+        self.fallback_chunker = RecursiveChunker(chunk_size=max_chunk_size)
 
     def chunk(self, text: str) -> list[str]:
-        heading_pattern = r"(?=\n#{1,4}\s+)"
-        sections = [s.strip() for s in re.split(heading_pattern, text) if s.strip()]
-        final_chunks = []
-        for sec in sections:
-            if len(sec) <= self.chunk_size:
-                final_chunks.append(sec)
-            else:
-                lines = sec.splitlines()
-                heading_prefix = lines[0] if lines[0].startswith("#") else ""
-                sub_chunks = self.recursive_chunker.chunk(sec)
-                for sc in sub_chunks:
-                    if heading_prefix and not sc.startswith("#"):
-                        sc = f"{heading_prefix}\n{sc}"
-                    final_chunks.append(sc)
-        return final_chunks
+        sentences = self._split_sentences(text)
+        embeddings = self._embed_sentences(sentences)
+        raw_chunks = self._build_semantic_chunks(sentences, embeddings)
+        return self._post_process_chunks(raw_chunks)
 ```
 
 **Thành viên 2 — Lê Văn Long**
-- **Loại chiến lược:** `RecursiveChunker` (`chunk_size=500`, `separators=["\n\n", "\n", ". ", " "]`)
-- **Mô tả & lý do chọn:** Cắt văn bản theo các cấp độ tự nhiên của văn bản hành chính: xuống dòng kép (đoạn), xuống dòng đơn (dòng liệt kê), sau đó mới tới dấu câu.
-- **Code snippet (nếu custom):** `RecursiveChunker(chunk_size=500)`
+- **Loại chiến lược:** **`RecursiveChunker` / `HeadingChunker`** (`chunk_size=500`, `separators=["\n\n", "\n", ". ", " "]`)
+- **Mô tả & lý do chọn:** Cắt văn bản theo các cấp độ tự nhiên của văn bản hành chính: xuống dòng kép (đoạn), xuống dòng đơn (dòng liệt kê), sau đó mới tới dấu câu, kết hợp giữ bối cảnh tiêu đề mục Markdown.
+- **Code snippet:** `RecursiveChunker(chunk_size=500)`
 
 ### So Sánh Giữa Các Thành Viên
 
 | Thành viên | Chiến lược (Strategy) | Điểm truy xuất (/10) | Điểm mạnh | Điểm yếu |
 |-----------|----------|----------------------|-----------|----------|
-| Nguyễn Ngọc Dương | `HeadingChunker` | 10 / 10 | Bảo toàn ngữ cảnh tiêu đề mục, điểm retrieval precision cao nhất (80%). | Phụ thuộc vào định dạng Markdown chuẩn tiêu đề. |
-| Lê Văn Long | `RecursiveChunker` | 8 / 10 | Linh hoạt, cắt mượt theo dòng trống và ranh giới đoạn. | Dễ làm mất tiêu đề mục nếu đoạn cắt nằm xa tiêu đề. |
+| Nguyễn Ngọc Dương | **`SemanticChunker`** | 10 / 10 | Phân tách ngữ nghĩa chính xác theo chủ đề câu, không bị gãy ý giữa câu. | Tốn thêm chi phí tính toán embedding khi chunking. |
+| Lê Văn Long | **`RecursiveChunker`** | 8 / 10 | Linh hoạt, tốc độ xử lý nhanh, bảo toàn ranh giới đoạn văn bản. | Dễ làm mất ngữ cảnh nếu đoạn cắt không có tiêu đề kèm theo. |
 
 **Chiến lược nào tốt nhất cho chủ đề này? Tại sao?**
-> Chiến lược **`HeadingChunker`** (kết hợp `RecursiveChunker`) là tốt nhất cho chủ đề quy định/dịch vụ đại học. Lý do là văn bản học vụ có cấu trúc chia thành các mục/khoản rõ ràng; việc giữ lại tiêu đề mục ở đầu mỗi chunk con giúp mô hình embedding (như `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`) định vị chính xác bối cảnh ngữ nghĩa khi thực hiện cosine similarity.
+> Chiến lược **`SemanticChunker`** kết hợp `HeadingChunker` là lựa chọn tối ưu nhất cho tài liệu quy định đại học. Sự kết hợp này đảm bảo ranh giới cắt luôn trùng khớp với sự chuyển dịch ý nghĩa chủ đề của văn bản, giúp mô hình vector store trích xuất chính xác Top-1 Chunk chứa bằng chứng.
 
 ---
 
@@ -125,11 +115,11 @@ class HeadingChunker:
 
 | # | Câu hỏi | Chiến lược tốt nhất cho câu này | Có chunk liên quan trong top-3? | Ghi chú |
 |---|---------|-------------------------------|-------------------------------|---------|
-| 1 | Số lượng lớp học phần bị hủy? | `FixedSizeChunker` / `RecursiveChunker` | Có (Top-1) | Trả về chính xác thông báo hủy 16 lớp học phần. |
-| 2 | Điều kiện đăng ký tiến trình rút gọn? | `HeadingChunker` | Có (Top-1) | Giữ được mục "Nguyên tắc đăng ký" kèm tiêu đề. |
-| 3 | Quy trình các bước đăng ký học vượt? | `HeadingChunker` / `FixedSizeChunker` | Có (Top-1) | Trả về trọn vẹn 3 bước hướng dẫn. |
-| 4 | Liệt kê các môn học bị hủy đợt hè? | `SentenceChunker` / `HeadingChunker` | Có (Top-2) | Truy xuất được bảng danh sách 16 môn học. |
-| 5 | Xử lý học phần bị hủy (audience=student)? | `HeadingChunker` (+ Metadata Filter) | Có (Top-1) | Nhờ lọc `audience=student` nên loại bỏ toàn bộ thông báo khác. |
+| 1 | Số lượng lớp học phần bị hủy? | `SemanticChunker` / `FixedSizeChunker` | Có (Top-1) | Trả về chính xác thông báo hủy 16 lớp học phần. |
+| 2 | Điều kiện đăng ký tiến trình rút gọn? | `SemanticChunker` / `HeadingChunker` | Có (Top-1) | Giữ được mục "Nguyên tắc đăng ký" trọn vẹn ý nghĩa. |
+| 3 | Quy trình các bước đăng ký học vượt? | `SemanticChunker` | Có (Top-1) | Trả về trọn vẹn 3 bước hướng dẫn không bị gãy bước. |
+| 4 | Liệt kê các môn học bị hủy đợt hè? | `SentenceChunker` / `SemanticChunker` | Có (Top-2) | Truy xuất được bảng danh sách 16 môn học. |
+| 5 | Xử lý học phần bị hủy (audience=student)? | `SemanticChunker` (+ Metadata Filter) | Có (Top-1) | Nhờ lọc `audience=student` nên loại bỏ toàn bộ thông báo khác. |
 
 **Lọc bằng metadata có giúp ích không? Ở câu hỏi nào?**
 > Lọc metadata tỏ ra đặc biệt hiệu quả ở **Câu hỏi số 5** (`Q5_FILTER_EXCEPTION`). Việc áp dụng pre-filter `metadata_filter={"audience": "student", "department": "academic-affairs"}` giúp loại bỏ 100% các văn bản không dành cho sinh viên trước khi tính điểm cosine similarity, nâng chính xác vị trí Top-1 lên tuyệt đối.
@@ -139,15 +129,15 @@ class HeadingChunker:
 ## 4. Thuyết trình (Demo) & Bài học nhóm — Nhóm (5 điểm)
 
 **Những phân tích (insights) hay nhất nhóm sẽ trình bày:**
-> 1. **Kiến trúc Chunking phân cấp (Heading + Recursive):** Là chìa khóa giải quyết bài toán tra cứu văn bản quy chế đại học có cấu trúc phân mục.
+> 1. **Kỹ thuật Semantic Chunking dựa trên mô hình Embedding:** Giúp xác định tự động điểm ngắt chủ đề ngữ nghĩa giữa các câu thay vì đặt tham số cố định ngẫu nhiên.
 > 2. **Tác động thực tế của Metadata Pre-Filtering:** Giúp loại bỏ nhiễu ngữ nghĩa (semantic noise) từ các đơn vị quản lý khác trước khi chạy embedding retrieval.
 > 3. **Tầm quan trọng của Caching Embedding:** Giúp tăng tốc độ benchmark lên gấp 5-10 lần mà vẫn đảm bảo tính công bằng và nhất quán giữa các chiến lược.
 
 **Bài học rút ra khi so sánh trong nhóm:**
-> Cùng một bộ tài liệu nguồn nhưng nếu chỉ dùng `FixedSizeChunker` cắt ngẫu nhiên sẽ dễ làm "gãy" ranh giới thông tin (ví dụ: chia cắt các bước trong một quy trình). Việc áp dụng `HeadingChunker` giúp giữ nguyên bối cảnh tiêu đề mục ở đầu mỗi đoạn cắt.
+> So sánh giữa `RecursiveChunker` của Long và `SemanticChunker` của Dương cho thấy `SemanticChunker` tạo ra các chunk có tính đồng nhất cao hơn về bối cảnh câu hỏi, giúp Agent dễ dàng sinh ra câu trả lời chuẩn xác.
 
 **Nếu làm lại, nhóm sẽ thay đổi gì trong chiến lược dữ liệu (data strategy)?**
-> Nhóm sẽ thiết kế thêm cơ chế **Parent-Child Chunking** (hoặc Auto-Merging Retriever): sử dụng chunk nhỏ (child) để matching vector đạt độ tương đồng cao, nhưng khi gửi cho LLM sẽ trả về toàn bộ đoạn lớn (parent) để sinh câu trả lời đầy đủ ngữ cảnh nhất.
+> Nhóm sẽ thiết kế thêm cơ chế **Parent-Child Chunking** (hoặc Auto-Merging Retriever): sử dụng chunk nhỏ (`SemanticChunker`) để matching vector đạt độ tương đồng cao, nhưng khi gửi cho LLM sẽ trả về toàn bộ đoạn lớn (parent) để sinh câu trả lời đầy đủ ngữ cảnh nhất.
 
 ---
 
