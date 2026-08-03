@@ -5,6 +5,8 @@ Provides multiple chunking strategies:
     - FixedSizeChunker: Sliding window fixed-length text chunker.
     - SentenceChunker: Sentence-boundary chunker using regex split.
     - RecursiveChunker: Priority-separator recursive chunker.
+    - HeadingChunker: Domain-specific markdown heading chunker.
+    - SemanticChunker: Embedding-driven semantic shift boundary chunker.
     - ChunkingStrategyComparator: Comparative analysis tool across strategies.
 
 Also provides vector utility:
@@ -17,6 +19,7 @@ import json
 import math
 import re
 from pathlib import Path
+from typing import Any, Callable
 
 from src.log import get_logger
 from src.models import Document
@@ -168,6 +171,163 @@ class RecursiveChunker:
         return [c for c in chunks if c]
 
 
+class HeadingChunker:
+    """
+    Domain-specific chunker for university policy documents.
+    Splits text by markdown headings (#, ##, ###) first to preserve section context,
+    then uses RecursiveChunker to further split large sections if needed.
+    """
+
+    def __init__(self, chunk_size: int = 500) -> None:
+        self.chunk_size = chunk_size
+        self.recursive_chunker = RecursiveChunker(chunk_size=chunk_size)
+
+    def chunk(self, text: str) -> list[str]:
+        if not text or not text.strip():
+            return []
+
+        heading_pattern = r"(?=\n#{1,4}\s+)"
+        sections = [s.strip() for s in re.split(heading_pattern, text) if s.strip()]
+
+        final_chunks: list[str] = []
+        for sec in sections:
+            if len(sec) <= self.chunk_size:
+                final_chunks.append(sec)
+            else:
+                lines = sec.splitlines()
+                heading_prefix = lines[0] if lines[0].startswith("#") else ""
+                sub_chunks = self.recursive_chunker.chunk(sec)
+                for sc in sub_chunks:
+                    if heading_prefix and not sc.startswith("#"):
+                        sc = f"{heading_prefix}\n{sc}"
+                    final_chunks.append(sc)
+
+        return final_chunks
+
+
+class SemanticChunker:
+    """
+    Splits document into chunks based on semantic shifts between consecutive sentences.
+
+    Workflow:
+        1. Helper _split_sentences(): Tokenize text into sentences.
+        2. Helper _embed_sentences(): Generate sentence embeddings using sentence-transformers model.
+        3. Helper _compute_similarity(): Calculate cosine similarity between consecutive sentences.
+        4. Helper _build_semantic_chunks(): Group sentences while similarity >= similarity_threshold
+           and chunk character size <= max_chunk_size.
+        5. Helper _post_process_chunks(): Fallback to RecursiveChunker if any chunk exceeds max_chunk_size.
+    """
+
+    _cached_embedder: Any = None  # Class-level model reuse
+
+    def __init__(
+        self,
+        similarity_threshold: float = 0.45,
+        max_chunk_size: int = 500,
+        min_chunk_size: int = 50,
+        embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+        fallback_chunker: Any | None = None,
+    ) -> None:
+        self.similarity_threshold = similarity_threshold
+        self.max_chunk_size = max_chunk_size
+        self.min_chunk_size = min_chunk_size
+        self.embedding_model = embedding_model
+        self.fallback_chunker = fallback_chunker or RecursiveChunker(chunk_size=max_chunk_size)
+        self.sentence_cache: dict[str, list[float]] = {}
+
+        # Lazy-load model once
+        if SemanticChunker._cached_embedder is None:
+            try:
+                from src.embeddings import LocalEmbedder
+                logger.info(f"Initializing SemanticChunker with embedder model: {embedding_model}")
+                SemanticChunker._cached_embedder = LocalEmbedder(model_name=embedding_model)
+            except Exception as err:
+                logger.warning(f"LocalEmbedder failed to load in SemanticChunker: {err}. Using mock fallback.")
+                from src.embeddings import _mock_embed
+                SemanticChunker._cached_embedder = _mock_embed
+
+    def _split_sentences(self, text: str) -> list[str]:
+        """Split text into sentences using lookbehind regex."""
+        if not text or not text.strip():
+            return []
+        raw = re.split(r"(?<=[.!?])\s+|\n+", text)
+        return [s.strip() for s in raw if s.strip()]
+
+    def _embed_sentences(self, sentences: list[str]) -> list[list[float]]:
+        """Embed list of sentences with in-memory caching."""
+        embeddings: list[list[float]] = []
+        for s in sentences:
+            if s in self.sentence_cache:
+                embeddings.append(self.sentence_cache[s])
+            else:
+                vec = SemanticChunker._cached_embedder(s)
+                self.sentence_cache[s] = vec
+                embeddings.append(vec)
+        return embeddings
+
+    def _compute_similarity(self, vec_a: list[float], vec_b: list[float]) -> float:
+        """Compute cosine similarity between two sentence vectors."""
+        return compute_similarity(vec_a, vec_b)
+
+    def _build_semantic_chunks(
+        self, sentences: list[str], embeddings: list[list[float]]
+    ) -> list[str]:
+        """Group sentences into chunks based on similarity threshold and size limit."""
+        if not sentences:
+            return []
+
+        chunks: list[str] = []
+        current_sentences: list[str] = [sentences[0]]
+        current_len = len(sentences[0])
+
+        for i in range(len(sentences) - 1):
+            s_curr = sentences[i]
+            s_next = sentences[i + 1]
+            sim = self._compute_similarity(embeddings[i], embeddings[i + 1])
+
+            added_len = len(s_next) + 1
+
+            # Check boundary condition: semantic shift OR size overflow
+            if sim < self.similarity_threshold or (current_len + added_len > self.max_chunk_size):
+                chunks.append(" ".join(current_sentences).strip())
+                current_sentences = [s_next]
+                current_len = len(s_next)
+            else:
+                current_sentences.append(s_next)
+                current_len += added_len
+
+        if current_sentences:
+            chunks.append(" ".join(current_sentences).strip())
+
+        return chunks
+
+    def _post_process_chunks(self, raw_chunks: list[str]) -> list[str]:
+        """Ensure all chunks satisfy max_chunk_size by falling back to RecursiveChunker if needed."""
+        final_chunks: list[str] = []
+        for chunk_str in raw_chunks:
+            if len(chunk_str) > self.max_chunk_size:
+                sub_chunks = self.fallback_chunker.chunk(chunk_str)
+                final_chunks.extend(sub_chunks)
+            else:
+                final_chunks.append(chunk_str)
+        return [c for c in final_chunks if c.strip()]
+
+    def chunk(self, text: str) -> list[str]:
+        """Main interface for Semantic Chunking."""
+        if not text or not text.strip():
+            return []
+        if len(text) <= self.max_chunk_size:
+            return [text.strip()]
+
+        sentences = self._split_sentences(text)
+        if not sentences:
+            return []
+
+        embeddings = self._embed_sentences(sentences)
+        raw_chunks = self._build_semantic_chunks(sentences, embeddings)
+        return self._post_process_chunks(raw_chunks)
+
+
 def _dot(a: list[float], b: list[float]) -> float:
     """Compute dot product of two numerical vectors."""
     return sum(x * y for x, y in zip(a, b))
@@ -194,7 +354,7 @@ def compute_similarity(vec_a: list[float], vec_b: list[float]) -> float:
 
 
 class ChunkingStrategyComparator:
-    """Run all built-in chunking strategies and compare their results."""
+    """Run all built-in chunking strategies (including SemanticChunker) and compare their results."""
 
     def compare(self, text: str, chunk_size: int = 200) -> dict:
         if not text or not text.strip():
@@ -202,15 +362,18 @@ class ChunkingStrategyComparator:
                 "fixed_size": {"count": 0, "avg_length": 0.0, "chunks": []},
                 "by_sentences": {"count": 0, "avg_length": 0.0, "chunks": []},
                 "recursive": {"count": 0, "avg_length": 0.0, "chunks": []},
+                "semantic": {"count": 0, "avg_length": 0.0, "chunks": []},
             }
 
         fixed_chunker = FixedSizeChunker(chunk_size=chunk_size, overlap=20)
         sentence_chunker = SentenceChunker(max_sentences_per_chunk=3)
         recursive_chunker = RecursiveChunker(chunk_size=chunk_size)
+        semantic_chunker = SemanticChunker(max_chunk_size=chunk_size)
 
         fixed_chunks = fixed_chunker.chunk(text)
         sentence_chunks = sentence_chunker.chunk(text)
         recursive_chunks = recursive_chunker.chunk(text)
+        semantic_chunks = semantic_chunker.chunk(text)
 
         def _calc_stats(chunks: list[str]) -> dict:
             count = len(chunks)
@@ -225,43 +388,8 @@ class ChunkingStrategyComparator:
             "fixed_size": _calc_stats(fixed_chunks),
             "by_sentences": _calc_stats(sentence_chunks),
             "recursive": _calc_stats(recursive_chunks),
+            "semantic": _calc_stats(semantic_chunks),
         }
-
-
-class HeadingChunker:
-    """
-    Domain-specific chunker for university policy documents.
-    Splits text by markdown headings (#, ##, ###) first to preserve section context,
-    then uses RecursiveChunker to further split large sections if needed.
-    """
-
-    def __init__(self, chunk_size: int = 500) -> None:
-        self.chunk_size = chunk_size
-        self.recursive_chunker = RecursiveChunker(chunk_size=chunk_size)
-
-    def chunk(self, text: str) -> list[str]:
-        if not text or not text.strip():
-            return []
-
-        # Split text by headings (#, ##, ###)
-        heading_pattern = r"(?=\n#{1,4}\s+)"
-        sections = [s.strip() for s in re.split(heading_pattern, text) if s.strip()]
-
-        final_chunks: list[str] = []
-        for sec in sections:
-            if len(sec) <= self.chunk_size:
-                final_chunks.append(sec)
-            else:
-                # Sub-split large sections while retaining heading prefix if possible
-                lines = sec.splitlines()
-                heading_prefix = lines[0] if lines[0].startswith("#") else ""
-                sub_chunks = self.recursive_chunker.chunk(sec)
-                for sc in sub_chunks:
-                    if heading_prefix and not sc.startswith("#"):
-                        sc = f"{heading_prefix}\n{sc}"
-                    final_chunks.append(sc)
-
-        return final_chunks
 
 
 # =====================================================================
@@ -281,6 +409,7 @@ def process_document_to_chunks(
         - source
         - chunk_index
         - total_chunks
+        - chunk_strategy
     """
     chunker = chunker or FixedSizeChunker()
     raw_chunks = chunker.chunk(doc.content)
@@ -288,6 +417,7 @@ def process_document_to_chunks(
 
     chunk_docs: list[Document] = []
     source_val = doc.metadata.get("source") or doc.metadata.get("source_url") or doc.id
+    strategy_name = getattr(chunker, "__class__", {}).__name__ if hasattr(chunker, "__class__") else "default"
 
     for idx, piece in enumerate(raw_chunks):
         meta = dict(doc.metadata)
@@ -295,6 +425,7 @@ def process_document_to_chunks(
         meta["chunk_index"] = idx
         meta["total_chunks"] = total_chunks
         meta["doc_id"] = doc.id
+        meta["chunk_strategy"] = strategy_name.lower()
 
         chunk_doc = Document(
             id=f"{doc.id}::chunk_{idx}",
@@ -318,7 +449,7 @@ def process_chunking_directory(
     Returns:
         Tuple of (documents_processed, total_chunks, avg_chunks_per_doc).
     """
-    from ingest import load_documents  # Use existing project loader
+    from ingest import load_documents
 
     chunker = chunker or FixedSizeChunker()
 
@@ -350,7 +481,6 @@ def process_chunking_directory(
         logger.info(f"Number of chunks: {num_chunks}")
         logger.info(f"Average chunk length: {avg_len:.1f}")
 
-        # Save to output_dir for debugging
         def _json_default(obj):
             if hasattr(obj, "isoformat"):
                 return obj.isoformat()

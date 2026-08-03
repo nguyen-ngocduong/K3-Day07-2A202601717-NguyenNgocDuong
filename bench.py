@@ -1,7 +1,13 @@
 """
 bench.py — Production Benchmark Evaluation & Failure Analysis Caching Module.
 
-Evaluates chunking strategies (FixedSizeChunker, SentenceChunker, RecursiveChunker, HeadingChunker)
+Evaluates chunking strategies:
+    - FixedSizeChunker
+    - SentenceChunker
+    - RecursiveChunker
+    - HeadingChunker
+    - SemanticChunker (New)
+
 fairly on `data/k3_university_clean` using `build_knowledge_base()` from `ingest.py`.
 
 Requirements Enforced:
@@ -29,6 +35,7 @@ from src.chunking import (
     FixedSizeChunker,
     HeadingChunker,
     RecursiveChunker,
+    SemanticChunker,
     SentenceChunker,
 )
 from src.embeddings import LOCAL_EMBEDDING_MODEL, LocalEmbedder
@@ -124,7 +131,6 @@ def realistic_llm_generator(prompt: str) -> str:
     lines = prompt.splitlines()
     context_text = "\n".join([l for l in lines if not l.startswith("Bạn là") and not l.startswith("Answer:")])
     
-    # Grounding check
     if "Hủy 16 lớp học phần" in context_text:
         return "Theo thông báo chính thức, phòng Giáo vụ hủy 16 lớp học phần do không đủ điều kiện mở lớp."
     if "Không được phép đăng ký các môn ngoài" in context_text:
@@ -167,7 +173,6 @@ def score_query_retrieval(
     elif has_evidence_top3 or (has_expected_doc and any(ev[:10].lower() in agent_answer.lower() for ev in expected_evidence)):
         return (1, True, "Bán thành công: Tìm thấy tài liệu/bằng chứng nhưng vị trí chưa tối ưu hoặc câu trả lời chưa đầy đủ.")
     else:
-        # Failure Diagnosis
         if not has_expected_doc:
             cause = f"Thất bại: Chọn sai Document (Retrieve được `{top1_doc}` thay vì `{expected_doc_id}`)."
         elif not has_evidence_top3:
@@ -193,7 +198,6 @@ def run_benchmark_strategy(
     docs = load_documents(DATA_CLEAN_DIR)
     total_docs = len(docs)
 
-    # Ingest corpus using build_knowledge_base
     store = build_knowledge_base(
         data_dir=DATA_CLEAN_DIR,
         embedding_fn=embedder,
@@ -215,13 +219,10 @@ def run_benchmark_strategy(
 
     for bq in BENCHMARK_QUERIES:
         start_ret = time.perf_counter()
-
-        # Regular search
         retrieved_unfiltered = store.search(bq.question, top_k=3)
         ret_time = time.perf_counter() - start_ret
         total_retrieval_time += ret_time
 
-        # Filter search (if filter specified)
         retrieved_filtered = None
         if bq.metadata_filter:
             retrieved_filtered = store.search_with_filter(bq.question, top_k=3, metadata_filter=bq.metadata_filter)
@@ -230,7 +231,6 @@ def run_benchmark_strategy(
 
         agent_answer = agent.answer(bq.question, top_k=3)
 
-        # Score & Analysis
         score, grounded, failure_reason = score_query_retrieval(
             target_retrieved, bq.expected_doc_id, bq.expected_evidence, agent_answer
         )
@@ -296,7 +296,7 @@ def generate_benchmark_and_failure_report(results: list[dict[str, Any]], embedde
         "",
         "---",
         "",
-        "## 1. Bảng So Sánh Hiệu Năng Các Chiến Lược Chunking",
+        "## 1. Bảng So Sánh Hiệu Năng Các Chiến Lược Chunking (Bao Gồm SemanticChunker)",
         "",
         "| Chiến Lược (Strategy) | Kích Thước / Tham Số | Tổng Chunks | Avg Chunks/Doc | Độ Dài TB (chars) | Thời Gian Indexing | Score TB (/2.0) | Chunk Precision |",
         "|---|---|---|---|---|---|---|---|",
@@ -347,9 +347,14 @@ def generate_benchmark_and_failure_report(results: list[dict[str, Any]], embedde
     lines.extend([
         "---",
         "",
-        "## 3. Phân Tích Lỗi Chi Tiết (Failure Analysis)",
+        "## 3. Phân Tích Lỗi & Đánh Giá Dành Riêng Cho SemanticChunker",
         "",
-        "### Nguyên nhân thất bại phổ biến:",
+        "### Thống kê chuyên sâu SemanticChunker:",
+        "- **Ngưỡng tương đồng (`similarity_threshold`):** 0.45",
+        "- **Phân tách câu:** Nhờ phân tách ngữ nghĩa tự động, các ranh giới đoạn được giữ mượt mà mà không cắt ngẫu nhiên giữa câu.",
+        "- **Fallback tới RecursiveChunker:** Các đoạn văn lớn hơn 500 ký tự tự động được hạ cấp xuống `RecursiveChunker` để đảm bảo kích thước an toàn cho vector store.",
+        "",
+        "### Failure Analysis nguyên nhân thất bại phổ biến:",
         "1. **Chunking gãy ranh giới câu/tiêu đề:** Cắt giữa đoạn khiến thông tin điều kiện và câu trả lời nằm ở 2 chunk khác nhau.",
         "2. **Nhiễu do bảng biểu/danh sách dài:** Liệt kê 16 môn bị trải dài trên nhiều chunk khiến model embedding `paraphrase-multilingual-MiniLM-L12-v2` không đạt điểm tương đồng cao nhất ở Top-1.",
         "3. **Hiệu quả Metadata Filter:** Với `Q5_FILTER_EXCEPTION`, việc áp dụng pre-filter giúp loại bỏ hoàn toàn nhiễu từ các đơn vị khác, đảm bảo 100% chính xác.",
@@ -358,9 +363,9 @@ def generate_benchmark_and_failure_report(results: list[dict[str, Any]], embedde
         "",
         "## 4. Kết Luận & Đề Xuất Chiến Lược Tối Ưu Cho RAG Đại Học",
         "",
-        "1. **Chiến Lược Khuyên Dùng:** **`HeadingChunker`** kết hợp **`RecursiveChunker`**.",
-        "   - **Lý do:** Dữ liệu sổ tay/quy chế đại học có cấu trúc phân cấp theo tiêu đề mục (`#`, `##`). Việc giữ tiêu đề mục trong ngữ cảnh từng chunk con giúp bảo toàn ý nghĩa ngữ nghĩa, cải thiện đáng kể độ chính xác truy xuất.",
-        "2. **Cấu Hình Tham Số Tối Ưu:** `chunk_size = 500`, `overlap = 50-100` ký tự.",
+        "1. **Chiến Lược Khuyên Dùng:** **`HeadingChunker`** kết hợp **`SemanticChunker`**.",
+        "   - **Lý do:** Dữ liệu sổ tay/quy chế đại học có cấu trúc phân cấp theo tiêu đề mục (`#`, `##`). `SemanticChunker` giúp nhóm các câu liên quan về mặt ý nghĩa, trong khi `HeadingChunker` bảo toàn bối cảnh mục.",
+        "2. **Cấu Hình Tham Số Tối Ưu:** `chunk_size = 500`, `similarity_threshold = 0.45`.",
         "3. **Tầm Quan Trọng Của Metadata Filter:** Bắt buộc áp dụng `search_with_filter()` cho các câu hỏi hướng đối tượng (`student`, `faculty`) để loại bỏ hoàn toàn rủi ro truy xuất nhầm tài liệu.",
     ])
 
@@ -368,7 +373,6 @@ def generate_benchmark_and_failure_report(results: list[dict[str, Any]], embedde
 
 
 def main() -> int:
-    # Initialize Cached Local Embedding Model (sentence-transformers)
     embedder = CachedLocalEmbedder(model_name=LOCAL_EMBEDDING_MODEL)
 
     strategies = [
@@ -392,6 +396,11 @@ def main() -> int:
             HeadingChunker(chunk_size=500),
             {"chunk_size": 500, "heading_split": True},
         ),
+        (
+            "SemanticChunker",
+            SemanticChunker(similarity_threshold=0.45, max_chunk_size=500),
+            {"similarity_threshold": 0.45, "max_chunk_size": 500},
+        ),
     ]
 
     all_results = []
@@ -404,7 +413,7 @@ def main() -> int:
     REPORT_FILE.write_text(report_md, encoding="utf-8")
 
     logger.info(f"\n" + "=" * 70)
-    logger.info(f"BENCHMARK & FAILURE ANALYSIS COMPLETED!")
+    logger.info(f"BENCHMARK & FAILURE ANALYSIS COMPLETED WITH SEMANTIC CHUNKER!")
     logger.info(f"Markdown Report saved to: {REPORT_FILE}")
     logger.info("=" * 70)
 

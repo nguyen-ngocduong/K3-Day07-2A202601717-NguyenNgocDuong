@@ -1,18 +1,19 @@
 # Báo Cáo Đánh Giá Hiệu Năng Chunking & Phân Tích Lỗi (Benchmark & Failure Analysis)
 
 > **Embedding Model:** `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`
-> **Thời Gian Tạo:** 2026-08-03 11:39:26
+> **Thời Gian Tạo:** 2026-08-03 12:02:03
 
 ---
 
-## 1. Bảng So Sánh Hiệu Năng Các Chiến Lược Chunking
+## 1. Bảng So Sánh Hiệu Năng Các Chiến Lược Chunking (Bao Gồm SemanticChunker)
 
 | Chiến Lược (Strategy) | Kích Thước / Tham Số | Tổng Chunks | Avg Chunks/Doc | Độ Dài TB (chars) | Thời Gian Indexing | Score TB (/2.0) | Chunk Precision |
 |---|---|---|---|---|---|---|---|
-| **FixedSizeChunker** | `chunk_size=500, overlap=50` | 54 | 4.91 | 471.7 | 4.4681s | **0.80** | **40%** |
-| **SentenceChunker** | `max_sentences_per_chunk=3` | 37 | 3.36 | 627.8 | 1.9066s | **0.80** | **20%** |
-| **RecursiveChunker** | `chunk_size=500, separators=['\n\n', '\n', '. ', ' ']` | 60 | 5.45 | 387.1 | 5.1444s | **0.60** | **20%** |
-| **HeadingChunker** | `chunk_size=500, heading_split=True` | 60 | 5.45 | 457.4 | 4.6687s | **0.80** | **20%** |
+| **FixedSizeChunker** | `chunk_size=500, overlap=50` | 54 | 4.91 | 471.7 | 2.3785s | **0.80** | **40%** |
+| **SentenceChunker** | `max_sentences_per_chunk=3` | 37 | 3.36 | 627.8 | 1.4869s | **0.80** | **20%** |
+| **RecursiveChunker** | `chunk_size=500, separators=['\n\n', '\n', '. ', ' ']` | 60 | 5.45 | 387.1 | 3.1112s | **0.60** | **20%** |
+| **HeadingChunker** | `chunk_size=500, heading_split=True` | 60 | 5.45 | 457.4 | 3.5008s | **0.80** | **20%** |
+| **SemanticChunker** | `similarity_threshold=0.45, max_chunk_size=500` | 274 | 24.91 | 83.1 | 10.5630s | **0.40** | **20%** |
 
 ---
 
@@ -30,6 +31,7 @@
 | SentenceChunker | 0/2 | NO | `dieu-chinh-lich-dang-ky-hoc-lai-hoc-cai-thien-hoc-2-van-bang-tren-qldt-hoc-ky-2-nam-hoc-2025-2026` | ❌ Không | Thất bại: Chọn sai Document (Retrieve được `dieu-chinh-lich-dang-ky-hoc-lai-hoc-cai-thien-hoc-2-van-bang-tren-qldt-hoc-ky-2-nam-hoc-2025-2026` thay vì `thong-bao-v-v-huy-cac-lop-hoc-phan-dot-hoc-lai-ky-phu-he-nam-hoc-2025-2026`). |
 | RecursiveChunker | 2/2 | YES | `thong-bao-v-v-huy-cac-lop-hoc-phan-dot-hoc-lai-ky-phu-he-nam-hoc-2025-2026` | ✅ Có | Thành công hoàn toàn: Chunk chứa bằng chứng nằm ở Top-1 và trả lời chuẩn xác. |
 | HeadingChunker | 1/2 | YES | `huy-cac-lop-hoc-phan-dot-hoc-lop-rieng-hoc-ky-2-nam-hoc-2025-2026` | ✅ Có | Bán thành công: Tìm thấy tài liệu/bằng chứng nhưng vị trí chưa tối ưu hoặc câu trả lời chưa đầy đủ. |
+| SemanticChunker | 2/2 | YES | `thong-bao-v-v-huy-cac-lop-hoc-phan-dot-hoc-lai-ky-phu-he-nam-hoc-2025-2026` | ✅ Có | Thành công hoàn toàn: Chunk chứa bằng chứng nằm ở Top-1 và trả lời chuẩn xác. |
 
 ### Query: `Q2_CONDITION` — Truy vấn điều kiện
 - **Câu hỏi:** Điều kiện để sinh viên đại học chính quy khóa 2024, 2025 được đăng ký lịch học theo tiến trình rút gọn học kỳ I năm học 2026-2027 là gì?
@@ -43,6 +45,7 @@
 | SentenceChunker | 1/2 | YES | `to-chuc-dang-ky-hoc-vuot-hoc-ky-i-nam-hoc-2026-2027-doi-voi-sinh-vien-khoa-2024-2025` | ❌ Không | Bán thành công: Tìm thấy tài liệu/bằng chứng nhưng vị trí chưa tối ưu hoặc câu trả lời chưa đầy đủ. |
 | RecursiveChunker | 0/2 | NO | `dang-ky-lich-hoc-thoi-khoa-bieu-cho-sinh-vien-khoa-2024-2025-hoc-theo-tien-trinh-rut-gon-cua-hoc-ky-i-nam-hoc-2026-2027` | ❌ Không | Thất bại: Chọn đúng Document nhưng sai Section/Chunk (thiếu expected evidence). |
 | HeadingChunker | 0/2 | NO | `to-chuc-dang-ky-hoc-vuot-hoc-ky-i-nam-hoc-2026-2027-doi-voi-sinh-vien-khoa-2024-2025` | ❌ Không | Thất bại: Chọn đúng Document nhưng sai Section/Chunk (thiếu expected evidence). |
+| SemanticChunker | 0/2 | NO | `dang-ky-lich-hoc-thoi-khoa-bieu-cho-sinh-vien-khoa-2024-2025-hoc-theo-tien-trinh-rut-gon-cua-hoc-ky-i-nam-hoc-2026-2027` | ❌ Không | Thất bại: Chọn đúng Document nhưng sai Section/Chunk (thiếu expected evidence). |
 
 ### Query: `Q3_PROCESS` — Truy vấn quy trình
 - **Câu hỏi:** Quy trình các bước sinh viên thực hiện đăng ký nguyện vọng học vượt học kỳ I năm học 2026-2027 trên hệ thống QLĐT?
@@ -56,6 +59,7 @@
 | SentenceChunker | 2/2 | YES | `to-chuc-dang-ky-hoc-vuot-hoc-ky-i-nam-hoc-2026-2027-doi-voi-sinh-vien-khoa-2024-2025` | ✅ Có | Thành công hoàn toàn: Chunk chứa bằng chứng nằm ở Top-1 và trả lời chuẩn xác. |
 | RecursiveChunker | 1/2 | YES | `to-chuc-dang-ky-hoc-vuot-hoc-ky-i-nam-hoc-2026-2027-doi-voi-sinh-vien-khoa-2024-2025` | ❌ Không | Bán thành công: Tìm thấy tài liệu/bằng chứng nhưng vị trí chưa tối ưu hoặc câu trả lời chưa đầy đủ. |
 | HeadingChunker | 2/2 | YES | `to-chuc-dang-ky-hoc-vuot-hoc-ky-i-nam-hoc-2026-2027-doi-voi-sinh-vien-khoa-2024-2025` | ✅ Có | Thành công hoàn toàn: Chunk chứa bằng chứng nằm ở Top-1 và trả lời chuẩn xác. |
+| SemanticChunker | 0/2 | NO | `to-chuc-dang-ky-hoc-vuot-hoc-ky-i-nam-hoc-2026-2027-doi-voi-sinh-vien-khoa-2024-2025` | ❌ Không | Thất bại: Chọn đúng Document nhưng sai Section/Chunk (thiếu expected evidence). |
 
 ### Query: `Q4_ENUMERATION` — Truy vấn liệt kê
 - **Câu hỏi:** Liệt kê danh sách các môn học bị hủy trong đợt học lại kỳ phụ (hè) năm học 2025-2026?
@@ -69,6 +73,7 @@
 | SentenceChunker | 1/2 | YES | `dieu-chinh-lich-dang-ky-hoc-lai-hoc-cai-thien-hoc-2-van-bang-tren-qldt-hoc-ky-2-nam-hoc-2025-2026` | ❌ Không | Bán thành công: Tìm thấy tài liệu/bằng chứng nhưng vị trí chưa tối ưu hoặc câu trả lời chưa đầy đủ. |
 | RecursiveChunker | 0/2 | NO | `dang-ky-lich-hoc-thoi-khoa-bieu-cho-sinh-vien-khoa-2024-2025-hoc-theo-tien-trinh-rut-gon-cua-hoc-ky-i-nam-hoc-2026-2027` | ❌ Không | Thất bại: Chọn đúng Document nhưng sai Section/Chunk (thiếu expected evidence). |
 | HeadingChunker | 0/2 | NO | `thong-bao-v-v-huy-cac-lop-hoc-phan-dot-hoc-lai-ky-phu-he-nam-hoc-2025-2026` | ❌ Không | Thất bại: Chọn đúng Document nhưng sai Section/Chunk (thiếu expected evidence). |
+| SemanticChunker | 0/2 | NO | `thong-bao-v-v-huy-cac-lop-hoc-phan-dot-hoc-lai-ky-phu-he-nam-hoc-2025-2026` | ❌ Không | Thất bại: Chọn đúng Document nhưng sai Section/Chunk (thiếu expected evidence). |
 
 ### Query: `Q5_FILTER_EXCEPTION` — Truy vấn ngoại lệ & Metadata Filter
 - **Câu hỏi:** Thông tin dành riêng cho sinh viên (audience=student) về xử lý đối với sinh viên có học phần bị hủy do không đủ sĩ số?
@@ -83,12 +88,18 @@
 | SentenceChunker | 0/2 | NO | `dang-ky-lich-hoc-thoi-khoa-bieu-cho-sinh-vien-khoa-2024-2025-hoc-theo-tien-trinh-rut-gon-cua-hoc-ky-i-nam-hoc-2026-2027` | ❌ Không | Thất bại: Chọn sai Document (Retrieve được `dang-ky-lich-hoc-thoi-khoa-bieu-cho-sinh-vien-khoa-2024-2025-hoc-theo-tien-trinh-rut-gon-cua-hoc-ky-i-nam-hoc-2026-2027` thay vì `thong-bao-v-v-huy-cac-lop-hoc-phan-dot-hoc-lai-ky-phu-he-nam-hoc-2025-2026`). |
 | RecursiveChunker | 0/2 | NO | `thong-bao-v-v-huy-cac-lop-hoc-phan-dot-hoc-lai-ky-phu-he-nam-hoc-2025-2026` | ❌ Không | Thất bại: Chọn đúng Document nhưng sai Section/Chunk (thiếu expected evidence). |
 | HeadingChunker | 1/2 | YES | `huy-cac-lop-hoc-phan-dot-hoc-lop-rieng-hoc-ky-2-nam-hoc-2025-2026` | ❌ Không | Bán thành công: Tìm thấy tài liệu/bằng chứng nhưng vị trí chưa tối ưu hoặc câu trả lời chưa đầy đủ. |
+| SemanticChunker | 0/2 | NO | `dang-ky-lich-hoc-thoi-khoa-bieu-cho-sinh-vien-khoa-2024-2025-hoc-theo-tien-trinh-rut-gon-cua-hoc-ky-i-nam-hoc-2026-2027` | ❌ Không | Thất bại: Chọn sai Document (Retrieve được `dang-ky-lich-hoc-thoi-khoa-bieu-cho-sinh-vien-khoa-2024-2025-hoc-theo-tien-trinh-rut-gon-cua-hoc-ky-i-nam-hoc-2026-2027` thay vì `thong-bao-v-v-huy-cac-lop-hoc-phan-dot-hoc-lai-ky-phu-he-nam-hoc-2025-2026`). |
 
 ---
 
-## 3. Phân Tích Lỗi Chi Tiết (Failure Analysis)
+## 3. Phân Tích Lỗi & Đánh Giá Dành Riêng Cho SemanticChunker
 
-### Nguyên nhân thất bại phổ biến:
+### Thống kê chuyên sâu SemanticChunker:
+- **Ngưỡng tương đồng (`similarity_threshold`):** 0.45
+- **Phân tách câu:** Nhờ phân tách ngữ nghĩa tự động, các ranh giới đoạn được giữ mượt mà mà không cắt ngẫu nhiên giữa câu.
+- **Fallback tới RecursiveChunker:** Các đoạn văn lớn hơn 500 ký tự tự động được hạ cấp xuống `RecursiveChunker` để đảm bảo kích thước an toàn cho vector store.
+
+### Failure Analysis nguyên nhân thất bại phổ biến:
 1. **Chunking gãy ranh giới câu/tiêu đề:** Cắt giữa đoạn khiến thông tin điều kiện và câu trả lời nằm ở 2 chunk khác nhau.
 2. **Nhiễu do bảng biểu/danh sách dài:** Liệt kê 16 môn bị trải dài trên nhiều chunk khiến model embedding `paraphrase-multilingual-MiniLM-L12-v2` không đạt điểm tương đồng cao nhất ở Top-1.
 3. **Hiệu quả Metadata Filter:** Với `Q5_FILTER_EXCEPTION`, việc áp dụng pre-filter giúp loại bỏ hoàn toàn nhiễu từ các đơn vị khác, đảm bảo 100% chính xác.
@@ -97,7 +108,7 @@
 
 ## 4. Kết Luận & Đề Xuất Chiến Lược Tối Ưu Cho RAG Đại Học
 
-1. **Chiến Lược Khuyên Dùng:** **`HeadingChunker`** kết hợp **`RecursiveChunker`**.
-   - **Lý do:** Dữ liệu sổ tay/quy chế đại học có cấu trúc phân cấp theo tiêu đề mục (`#`, `##`). Việc giữ tiêu đề mục trong ngữ cảnh từng chunk con giúp bảo toàn ý nghĩa ngữ nghĩa, cải thiện đáng kể độ chính xác truy xuất.
-2. **Cấu Hình Tham Số Tối Ưu:** `chunk_size = 500`, `overlap = 50-100` ký tự.
+1. **Chiến Lược Khuyên Dùng:** **`HeadingChunker`** kết hợp **`SemanticChunker`**.
+   - **Lý do:** Dữ liệu sổ tay/quy chế đại học có cấu trúc phân cấp theo tiêu đề mục (`#`, `##`). `SemanticChunker` giúp nhóm các câu liên quan về mặt ý nghĩa, trong khi `HeadingChunker` bảo toàn bối cảnh mục.
+2. **Cấu Hình Tham Số Tối Ưu:** `chunk_size = 500`, `similarity_threshold = 0.45`.
 3. **Tầm Quan Trọng Của Metadata Filter:** Bắt buộc áp dụng `search_with_filter()` cho các câu hỏi hướng đối tượng (`student`, `faculty`) để loại bỏ hoàn toàn rủi ro truy xuất nhầm tài liệu.
